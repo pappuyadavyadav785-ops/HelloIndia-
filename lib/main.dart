@@ -66,31 +66,26 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
       },
       verificationFailed: (e) {
         setState(() => loading = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: ${e.message}")));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message ?? "Failed")));
       },
-      codeSent: (verId, token) {
+      codeSent: (verId, resend) {
         setState(() {
           verificationId = verId;
           otpSent = true;
           loading = false;
         });
       },
-      codeAutoRetrievalTimeout: (verId) => verificationId = verId,
+      codeAutoRetrievalTimeout: (verId) {
+        verificationId = verId;
+      },
     );
   }
 
   void verifyOTP() async {
     try {
       setState(() => loading = true);
-      var cred = PhoneAuthProvider.credential(verificationId: verificationId, smsCode: otpCtrl.text.trim());
-      var userCred = await FirebaseAuth.instance.signInWithCredential(cred);
-      await FirebaseFirestore.instance.collection('users').doc(userCred.user!.uid).set({
-        'uid': userCred.user!.uid,
-        'phone': '+91${phoneCtrl.text.trim()}',
-        'name': 'User ${phoneCtrl.text.trim().substring(6)}',
-        'createdAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-      setState(() => loading = false);
+      PhoneAuthCredential cred = PhoneAuthProvider.credential(verificationId: verificationId, smsCode: otpCtrl.text.trim());
+      await FirebaseAuth.instance.signInWithCredential(cred);
     } catch (e) {
       setState(() => loading = false);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Galat OTP")));
@@ -100,21 +95,16 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("HelloIndia - OTP Login")),
+      appBar: AppBar(title: Text("HelloIndia Login")),
       body: Padding(
         padding: EdgeInsets.all(20),
         child: Column(
           children: [
-            if (!otpSent) ...[
-              TextField(controller: phoneCtrl, keyboardType: TextInputType.phone, decoration: InputDecoration(labelText: "Mobile Number", prefixText: "+91 ", border: OutlineInputBorder())),
-              SizedBox(height: 20),
-              loading ? CircularProgressIndicator() : ElevatedButton(onPressed: sendOTP, child: Text("OTP Bhejo")),
-            ] else ...[
-              TextField(controller: otpCtrl, keyboardType: TextInputType.number, decoration: InputDecoration(labelText: "6 Digit OTP", border: OutlineInputBorder())),
-              SizedBox(height: 20),
-              loading ? CircularProgressIndicator() : ElevatedButton(onPressed: verifyOTP, child: Text("Verify & Login")),
-              TextButton(onPressed: () => setState(() => otpSent = false), child: Text("Number Badlo"))
-            ]
+            TextField(controller: phoneCtrl, keyboardType: TextInputType.phone, decoration: InputDecoration(labelText: "Phone Number", prefixText: "+91 ")),
+            SizedBox(height: 20),
+            if (otpSent) TextField(controller: otpCtrl, decoration: InputDecoration(labelText: "OTP")),
+            SizedBox(height: 20),
+            loading ? CircularProgressIndicator() : ElevatedButton(onPressed: otpSent ? verifyOTP : sendOTP, child: Text(otpSent ? "Verify OTP" : "Send OTP")),
           ],
         ),
       ),
@@ -128,55 +118,63 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  String searchQuery = "";
   final searchCtrl = TextEditingController();
+  List<DocumentSnapshot> searchResult = [];
+
+  void doSearch(String val) async {
+    if (val.trim().isEmpty) {
+      setState(() => searchResult = []);
+      return;
+    }
+    var res = await FirebaseFirestore.instance.collection('users').where('phone', isGreaterThanOrEqualTo: val).where('phone', isLessThan: val + 'z').get();
+    setState(() => searchResult = res.docs);
+  }
+
+  void createUserDoc() async {
+    var user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      var doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      if (!doc.exists) {
+        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+          'uid': user.uid,
+          'phone': user.phoneNumber ?? "",
+          'name': user.phoneNumber ?? "User",
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    createUserDoc();
+  }
+
   @override
   Widget build(BuildContext context) {
-    var currentUid = FirebaseAuth.instance.currentUser!.uid;
     return Scaffold(
-      appBar: AppBar(title: Text("HelloIndia"), actions: [IconButton(icon: Icon(Icons.logout), onPressed: () => FirebaseAuth.instance.signOut())]),
+      appBar: AppBar(title: Text("HelloIndia"), actions: [IconButton(onPressed: () => FirebaseAuth.instance.signOut(), icon: Icon(Icons.logout))]),
       body: Column(
         children: [
-          Padding(
-            padding: EdgeInsets.all(10),
-            child: TextField(
-              controller: searchCtrl,
-              decoration: InputDecoration(hintText: "Search user by phone/name...", prefixIcon: Icon(Icons.search), border: OutlineInputBorder()),
-              onChanged: (v) => setState(() => searchQuery = v.toLowerCase()),
-            ),
-          ),
-          Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance.collection('users').snapshots(),
-              builder: (context, snap) {
-                if (!snap.hasData) return Center(child: CircularProgressIndicator());
-                var users = snap.data!.docs.where((d) => d.id != currentUid).toList();
-                if (searchQuery.isNotEmpty) {
-                  users = users.where((d) {
-                    var data = d.data() as Map<String, dynamic>;
-                    return (data['name'] ?? '').toString().toLowerCase().contains(searchQuery) || (data['phone'] ?? '').toString().toLowerCase().contains(searchQuery);
-                  }).toList();
-                }
-                if (users.isEmpty) return Center(child: Text("Koi user nahi mila - Dusre number se login karke dekho"));
-                return ListView.builder(
-                  itemCount: users.length,
-                  itemBuilder: (c, i) {
-                    var data = users[i].data() as Map<String, dynamic>;
-                    return ListTile(
-                      leading: CircleAvatar(child: Text(data['name'][0])),
-                      title: Text(data['name']),
-                      subtitle: Text(data['phone']),
-                      trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                        IconButton(icon: Icon(Icons.call, color: Colors.green), onPressed: () => Navigator.push(c, MaterialPageRoute(builder: (_) => CallScreen(name: data['name'], isVideo: false)))),
-                        IconButton(icon: Icon(Icons.videocam, color: Colors.blue), onPressed: () => Navigator.push(c, MaterialPageRoute(builder: (_) => CallScreen(name: data['name'], isVideo: true)))),
-                      ]),
-                      onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => ChatScreen(otherUid: data['uid'], otherName: data['name']))),
-                    );
-                  },
-                );
-              },
-            ),
-          )
+          Padding(padding: EdgeInsets.all(10), child: TextField(controller: searchCtrl, onChanged: doSearch, decoration: InputDecoration(hintText: "Phone number se search karo", prefixIcon: Icon(Icons.search), border: OutlineInputBorder()))),
+          Expanded(child: searchResult.isEmpty ? StreamBuilder(stream: FirebaseFirestore.instance.collection('chats').where('members', arrayContains: FirebaseAuth.instance.currentUser!.uid).snapshots(), builder: (c, s) {
+            if (!s.hasData) return Center(child: CircularProgressIndicator());
+            return ListView(children: s.data!.docs.map((d) => ListTile(title: Text(d['lastMessage'] ?? ""), onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ChatScreen(chatId: d.id, otherUserId: (d['members'] as List).firstWhere((e) => e != FirebaseAuth.instance.currentUser!.uid)))))).toList());
+          }) : ListView.builder(itemCount: searchResult.length, itemBuilder: (c, i) {
+            var data = searchResult[i].data() as Map;
+            if (data['uid'] == FirebaseAuth.instance.currentUser!.uid) return SizedBox();
+            return ListTile(title: Text(data['phone'] ?? ""), subtitle: Text(data['name'] ?? ""), trailing: Icon(Icons.chat), onTap: () async {
+              var myUid = FirebaseAuth.instance.currentUser!.uid;
+              var otherUid = data['uid'];
+              var chatId = myUid.hashCode <= otherUid.hashCode ? "${myUid}_$otherUid" : "${otherUid}_$myUid";
+              var chatDoc = await FirebaseFirestore.instance.collection('chats').doc(chatId).get();
+              if (!chatDoc.exists) {
+                await FirebaseFirestore.instance.collection('chats').doc(chatId).set({'members': [myUid, otherUid], 'lastMessage': '', 'createdAt': FieldValue.serverTimestamp()});
+              }
+              Navigator.push(context, MaterialPageRoute(builder: (_) => ChatScreen(chatId: chatId, otherUserId: otherUid)));
+            });
+          })),
         ],
       ),
     );
@@ -184,121 +182,74 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 class ChatScreen extends StatefulWidget {
-  final String otherUid, otherName;
-  ChatScreen({required this.otherUid, required this.otherName});
+  final String chatId;
+  final String otherUserId;
+  ChatScreen({required this.chatId, required this.otherUserId});
   @override
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
 class _ChatScreenState extends State<ChatScreen> {
   final msgCtrl = TextEditingController();
-  String get chatId {
-    var myUid = FirebaseAuth.instance.currentUser!.uid;
-    return myUid.hashCode <= widget.otherUid.hashCode ? "${myUid}_${widget.otherUid}" : "${widget.otherUid}_${myUid}";
-  }
+  final ImagePicker picker = ImagePicker();
 
-  void sendMessage({String? text, String? imageBase64, String? fileName}) async {
-    if ((text == null || text.isEmpty) && imageBase64 == null && fileName == null) return;
-    await FirebaseFirestore.instance.collection('chats').doc(chatId).collection('messages').add({
-      'sender': FirebaseAuth.instance.currentUser!.uid,
+  void sendMessage({String? text, String? base64Image, String? fileName, String? fileBase64}) async {
+    if ((text == null || text.trim().isEmpty) && base64Image == null && fileBase64 == null) return;
+    await FirebaseFirestore.instance.collection('chats').doc(widget.chatId).collection('messages').add({
+      'senderId': FirebaseAuth.instance.currentUser!.uid,
       'text': text ?? "",
-      'image': imageBase64 ?? "",
+      'imageBase64': base64Image ?? "",
       'fileName': fileName ?? "",
+      'fileBase64': fileBase64 ?? "",
       'time': FieldValue.serverTimestamp(),
     });
+    await FirebaseFirestore.instance.collection('chats').doc(widget.chatId).update({'lastMessage': text != null && text.isNotEmpty ? text : fileName != null ? "File: $fileName" : "Photo"});
     msgCtrl.clear();
   }
 
   Future<void> pickImage() async {
-    var picker = ImagePicker();
     var x = await picker.pickImage(source: ImageSource.gallery, imageQuality: 30);
-    if (x == null) return;
-    var bytes = await File(x.path).readAsBytes();
-    if (bytes.length > 900000) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Photo bada hai, chhota photo chuno")));
-      return;
+    if (x != null) {
+      var bytes = await File(x.path).readAsBytes();
+      var base64Str = base64Encode(bytes);
+      sendMessage(base64Image: base64Str);
     }
-    String base64 = base64Encode(bytes);
-    sendMessage(imageBase64: base64, text: "[Photo]");
   }
 
   Future<void> pickFile() async {
-    var result = await FilePicker.platform.pickFiles();
-    if (result == null) return;
-    var file = result.files.first;
-    if (file.size > 900000) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("File 1MB se kam hona chahiye bina Storage ke")));
-      return;
+    var result = await FilePicker.platform.pickFiles(withData: true);
+    if (result != null) {
+      var file = result.files.first;
+      var base64Str = file.bytes != null ? base64Encode(file.bytes!) : "";
+      sendMessage(fileName: file.name, fileBase64: base64Str, text: "File");
     }
-    String base64 = base64Encode(file.bytes!);
-    sendMessage(imageBase64: base64, fileName: file.name, text: "[File: ${file.name}]");
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.otherName)),
+      appBar: AppBar(title: Text("Chat")),
       body: Column(
         children: [
-          Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance.collection('chats').doc(chatId).collection('messages').orderBy('time', descending: true).snapshots(),
-              builder: (c, snap) {
-                if (!snap.hasData) return Center(child: CircularProgressIndicator());
-                return ListView.builder(
-                  reverse: true,
-                  itemCount: snap.data!.docs.length,
-                  itemBuilder: (c, i) {
-                    var data = snap.data!.docs[i].data() as Map<String, dynamic>;
-                    bool isMe = data['sender'] == FirebaseAuth.instance.currentUser!.uid;
-                    return Align(
-                      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-                      child: Container(
-                        margin: EdgeInsets.all(6),
-                        padding: EdgeInsets.all(10),
-                        decoration: BoxDecoration(color: isMe ? Colors.green[100] : Colors.grey[200], borderRadius: BorderRadius.circular(10)),
-                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          if ((data['image'] ?? "").toString().isNotEmpty) Image.memory(base64Decode(data['image']), width: 180),
-                          if ((data['text'] ?? "").toString().isNotEmpty) Text(data['text']),
-                          if ((data['fileName'] ?? "").toString().isNotEmpty) Text("📎 ${data['fileName']}", style: TextStyle(fontWeight: FontWeight.bold)),
-                        ]),
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-          Row(
-            children: [
-              IconButton(icon: Icon(Icons.photo), onPressed: pickImage),
-              IconButton(icon: Icon(Icons.attach_file), onPressed: pickFile),
-              Expanded(child: TextField(controller: msgCtrl, decoration: InputDecoration(hintText: "Message likho..."))),
-              IconButton(icon: Icon(Icons.send, color: Colors.green), onPressed: () => sendMessage(text: msgCtrl.text.trim())),
-            ],
-          )
+          Expanded(child: StreamBuilder(stream: FirebaseFirestore.instance.collection('chats').doc(widget.chatId).collection('messages').orderBy('time', descending: true).snapshots(), builder: (c, s) {
+            if (!s.hasData) return Center(child: CircularProgressIndicator());
+            return ListView.builder(reverse: true, itemCount: s.data!.docs.length, itemBuilder: (c, i) {
+              var m = s.data!.docs[i].data() as Map;
+              bool isMe = m['senderId'] == FirebaseAuth.instance.currentUser!.uid;
+              return Align(alignment: isMe ? Alignment.centerRight : Alignment.centerLeft, child: Container(margin: EdgeInsets.all(6), padding: EdgeInsets.all(10), decoration: BoxDecoration(color: isMe ? Colors.green[100] : Colors.grey[200], borderRadius: BorderRadius.circular(10)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                if ((m['text'] ?? "").toString().isNotEmpty) Text(m['text']),
+                if ((m['imageBase64'] ?? "").toString().isNotEmpty) Image.memory(base64Decode(m['imageBase64']), width: 150),
+                if ((m['fileName'] ?? "").toString().isNotEmpty) Text("📄 ${m['fileName']}", style: TextStyle(fontWeight: FontWeight.bold)),
+              ])));
+            });
+          })),
+          Row(children: [
+            IconButton(onPressed: pickImage, icon: Icon(Icons.photo)),
+            IconButton(onPressed: pickFile, icon: Icon(Icons.attach_file)),
+            Expanded(child: TextField(controller: msgCtrl, decoration: InputDecoration(hintText: "Message"))),
+            IconButton(onPressed: () => sendMessage(text: msgCtrl.text), icon: Icon(Icons.send)),
+          ]),
         ],
-      ),
-    );
-  }
-}
-
-class CallScreen extends StatelessWidget {
-  final String name;
-  final bool isVideo;
-  CallScreen({required this.name, required this.isVideo});
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black87,
-      body: Center(
-        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Icon(isVideo ? Icons.videocam : Icons.call, size: 80, color: Colors.white),
-          SizedBox(height: 20),
-          Text("${isVideo ? "Video" : "Voice"} Calling $name...", style: TextStyle(color: Colors.white, fontSize: 20)),
-          SizedBox(height: 40),
-          ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.red, shape: CircleBorder(), padding: EdgeInsets.all(20)), onPressed: () => Navigator.pop(context), child: Icon(Icons.call_end, size: 30)),
-        ]),
       ),
     );
   }
