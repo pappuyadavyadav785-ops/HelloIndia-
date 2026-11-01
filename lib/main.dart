@@ -240,4 +240,16 @@ class _HomeScreenState extends State<HomeScreen> {
                           },
                         ),
                         IconButton(
-                          
+                          icon: const Icon(Icons.call_end, color: Colors.white, size: 28),
+onPressed: () => Navigator.pop(context),
+),
+),
+],
+),
+),
+],
+),
+),
+);
+}
+                }
