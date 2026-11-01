@@ -1,120 +1,113 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:firebase_core/firebase_core.dart';
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  try {
-    await Firebase.initializeApp();
-  } catch (e) {
-    debugPrint("Firebase Bypass: $e");
-  }
-  runApp(const MyApp());
+void main() {
+  runApp(const MaterialApp(home: AuthScreen(), debugShowCheckedModeBanner: false));
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Hello India',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        primaryColor: const Color(0xFF075E54),
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF075E54),
-          secondary: const Color(0xFF25D366),
-        ),
-        scaffoldBackgroundColor: Colors.white,
-      ),
-      home: const AuthScreen(),
-    );
-  }
-}
-
-// 1. सुरक्षित मोबाइल नंबर + OTP लॉगिन स्क्रीन
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
-
   @override
   State<AuthScreen> createState() => _AuthScreenState();
 }
 
 class _AuthScreenState extends State<AuthScreen> {
-  bool isOtpSent = false;
-  final _phoneController = TextEditingController();
-  final _otpController = TextEditingController();
-  final _passwordController = TextEditingController();
+  bool isOtp = false;
+  final _phone = TextEditingController();
+  final _otp = TextEditingController();
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+      body: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.lock_person, size: 80, color: Color(0xFF075E54)),
+            const SizedBox(height: 16),
+            Text(isOtp ? 'OTP सत्यापन' : 'लॉगिन / साइन अप', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 24),
+            TextField(
+              controller: isOtp ? _otp : _phone,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(labelText: isOtp ? '6-अंकों का OTP (123456)' : 'मोबाइल नंबर', border: const OutlineInputBorder()),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF075E54), foregroundColor: Colors.white, minimumSize: const Size(double.infinity, 50)),
+              onPressed: () {
+                if (!isOtp) {
+                  if (_phone.text.length >= 10) setState(() => isOtp = true);
+                } else {
+                  if (_otp.text == "123456") Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const HomeScreen()));
+                }
+              },
+              child: Text(isOtp ? 'सत्यापित करें' : 'OTP प्राप्त करें'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  bool _isSearch = false;
+  final _search = TextEditingController();
+  final List<Map<String, String>> _all = [
+    {'name': 'अमित कुमार', 'msg': 'फोटो देख ली मैंने'},
+    {'name': 'राहुल सिंह', 'msg': 'कल फाइल भेज देना'},
+    {'name': 'प्रिया शर्मा', 'msg': 'वीडियो कॉल पर आओ'},
+  ];
+  List<Map<String, String>> _chats = [];
+
+  @override
+  void initState() { _chats = _all; super.initState(); }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, res) async { if (!didPop) await SystemNavigator.pop(); },
+      child: DefaultTabController(
+        length: 3,
+        child: Scaffold(
+          appBar: AppBar(
+            backgroundColor: const Color(0xFF075E54),
+            title: _isSearch 
+                ? TextField(controller: _search, style: const TextStyle(color: Colors.white), decoration: const InputDecoration(hintText: 'खोजें...', border: InputBorder.none), onChanged: (q) => setState(() => _chats = _all.where((c) => c['name']!.contains(q)).toList()))
+                : const Text('Hello India', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            actions: [IconButton(icon: Icon(_isSearch ? Icons.close : Icons.search, color: Colors.white), onPressed: () => setState(() { _isSearch = !_isSearch; _search.clear(); _chats = _all; }))],
+            bottom: const TabBar(indicatorColor: Colors.white, labelColor: Colors.white, unselectedLabelColor: Colors.white70, tabs: [Tab(text: 'CHATS'), Tab(text: 'CALLS'), Tab(text: 'PROFILE')]),
+          ),
+          body: TabBarView(
             children: [
-              Icon(Icons.lock_person, size: 80, color: Theme.of(context).primaryColor),
-              const SizedBox(height: 16),
-              Text(
-                isOtpSent ? 'OTP सत्यापन (Verification)' : 'मोबाइल नंबर से साइन अप / लॉगिन करें',
-                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                textAlign: TextAlign.center,
+              ListView.builder(
+                itemCount: _chats.length,
+                itemBuilder: (context, i) => ListTile(
+                  leading: CircleAvatar(backgroundColor: const Color(0xFF075E54), child: Text(_chats[i]['name']!.substring(0, 1), style: const TextStyle(color: Colors.white))),
+                  title: Text(_chats[i]['name']!, style: const TextStyle(fontWeight: FontWeight.bold)),
+                  subtitle: Text(_chats[i]['msg']!),
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => ChatDetailScreen(userName: _chats[i]['name']!))),
+                ),
               ),
-              const SizedBox(height: 32),
-              if (!isOtpSent) ...[
-                TextField(
-                  controller: _phoneController,
-                  keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(labelText: 'मोबाइल नंबर', border: OutlineInputBorder(), prefixIcon: Icon(Icons.phone)),
+              ListView.builder(
+                itemCount: 2,
+                itemBuilder: (context, i) => ListTile(
+                  leading: const CircleAvatar(child: Icon(Icons.person)),
+                  title: Text(i == 0 ? 'राहुल सिंह' : 'प्रिया शर्मा'),
+                  subtitle: Text(i == 0 ? 'आज, 9:15 AM' : 'कल, 8:45 PM'),
+                  trailing: IconButton(icon: Icon(i == 0 ? Icons.phone : Icons.videocam, color: const Color(0xFF075E54)), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => CallScreen(userName: i == 0 ? 'राहुल सिंह' : 'प्रिया शर्मा', isVideo: i != 0)))),
                 ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _passwordController,
-                  obscureText: true,
-                  decoration: const InputDecoration(labelText: 'पासवर्ड बनाएं', border: OutlineInputBorder(), prefixIcon: Icon(Icons.password)),
-                ),
-              ] else ...[
-                TextField(
-                  controller: _otpController,
-                  keyboardType: TextInputType.number,
-                  maxLength: 6,
-                  decoration: const InputDecoration(labelText: '6-अंकों का OTP दर्ज करें (123456)', border: OutlineInputBorder(), prefixIcon: Icon(Icons.sms)),
-                ),
-              ],
-              const SizedBox(height: 24),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Theme.of(context).primaryColor,
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size(double.infinity, 50),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-                onPressed: () {
-                  if (!isOtpSent) {
-                    if (_phoneController.text.length < 10) {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('कृपया सही मोबाइल नंबर दर्ज करें')));
-                      return;
-                    }
-                    setState(() { isOtpSent = true; });
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('OTP भेज दिया गया है (टेस्टिंग के लिए: 123456)')));
-                  } else {
-                    if (_otpController.text == "123456") {
-                      Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const HomeScreen()));
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('गलत OTP दर्ज किया गया है')));
-                    }
-                  }
-                },
-                child: Text(isOtpSent ? 'सत्यापित करें और आगे बढ़ें' : 'OTP प्राप्त करें', style: const TextStyle(fontSize: 16)),
               ),
-              if (isOtpSent)
-                TextButton(
-                  onPressed: () { setState(() { isOtpSent = false; }); },
-                  child: const Text('नंबर बदलें'),
-                ),
+              Center(child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white), onPressed: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const AuthScreen())), child: const Text('लॉग आउट'))),
             ],
           ),
         ),
@@ -123,133 +116,87 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 }
 
-// 2. मुख्य होम स्क्रीन (सर्च बार और वर्किंग टैब्स के साथ)
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
-
+class ChatDetailScreen extends StatefulWidget {
+  final String userName;
+  const ChatDetailScreen({super.key, required this.userName});
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  State<ChatDetailScreen> createState() => _ChatDetailScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
-  bool _isSearching = false;
-  final _searchController = TextEditingController();
-  
-  final List<Map<String, String>> _allChats = [
-    {'name': 'अमित कुमार', 'msg': 'फोटो देख ली मैंने', 'time': '10:30 AM'},
-    {'name': 'राहुल सिंह', 'msg': 'कल फाइल भेज देना जरूर', 'time': '09:15 AM'},
-    {'name': 'प्रिया शर्मा', 'msg': 'वीडियो कॉल पर आओ अभी', 'time': 'कल'},
-    {'name': 'विकास यादव', 'msg': 'हाँ भाई, सब ठीक है', 'time': '2 दिन पहले'},
-  ];
-  
-  List<Map<String, String>> _filteredChats = [];
-
-  @override
-  void initState() {
-    _filteredChats = _allChats;
-    super.initState();
-  }
-
-  void _filterSearch(String query) {
-    setState(() {
-      _filteredChats = _allChats
-          .where((chat) => chat['name']!.toLowerCase().contains(query.toLowerCase()))
-          .toList();
-    });
-  }
+class _ChatDetailScreenState extends State<ChatDetailScreen> {
+  final List<Map<String, dynamic>> _msgs = [];
+  final _msg = TextEditingController();
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, result) async {
-        if (didPop) return;
-        await SystemNavigator.pop();
-      },
-      child: DefaultTabController(
-        length: 3,
-        child: Scaffold(
-          appBar: AppBar(
-            backgroundColor: Theme.of(context).primaryColor,
-            title: _isSearching
-                ? TextField(
-                    controller: _searchController,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: const InputDecoration(hintText: 'खोजें (Search)...', hintStyle: TextStyle(color: Colors.white70), border: InputBorder.none),
-                    onChanged: _filterSearch,
-                  )
-                : const Text('Hello India', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            actions: [
-              IconButton(
-                icon: Icon(_isSearching ? Icons.close : Icons.search, color: Colors.white),
-                onPressed: () {
-                  setState(() {
-                    _isSearching = !_isSearching;
-                    if (!_isSearching) {
-                      _searchController.clear();
-                      _filteredChats = _allChats;
-                    }
-                  });
-                },
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF075E54),
+        iconTheme: const IconThemeData(color: Colors.white),
+        title: Text(widget.userName, style: const TextStyle(color: Colors.white)),
+        actions: [
+          IconButton(icon: const Icon(Icons.videocam), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => CallScreen(userName: widget.userName, isVideo: true)))),
+          IconButton(icon: const Icon(Icons.call), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => CallScreen(userName: widget.userName, isVideo: false)))),
+        ],
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: Container(
+              color: const Color(0xFFEFE7E2),
+              child: ListView.builder(
+                padding: const EdgeInsets.all(12),
+                itemCount: _msgs.length,
+                itemBuilder: (context, i) => Align(
+                  alignment: _msgs[i]['isMe'] ? Alignment.centerRight : Alignment.centerLeft,
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(vertical: 4),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(color: _msgs[i]['isMe'] ? const Color(0xFFDCF8C6) : Colors.white, borderRadius: BorderRadius.circular(12)),
+                    child: _msgs[i]['type'] == 'text' ? Text(_msgs[i]['text']) : Row(mainAxisSize: MainAxisSize.min, children: [Icon(_msgs[i]['type'] == 'image' ? Icons.image : Icons.insert_drive_file), const SizedBox(width: 8), Text(_msgs[i]['text'])]),
+                  ),
+                ),
               ),
-              IconButton(icon: const Icon(Icons.more_vert, color: Colors.white), onPressed: () {}),
-            ],
-            bottom: const TabBar(
-              indicatorColor: Colors.white,
-              labelColor: Colors.white,
-              unselectedLabelColor: Colors.white70,
-              tabs: [Tab(text: 'CHATS'), Tab(text: 'CALLS'), Tab(text: 'PROFILE')],
             ),
           ),
-          body: TabBarView(
-            children: [
-              // चैट्स टैब (वर्किंग सर्च के साथ)
-              _filteredChats.isEmpty
-                  ? const Center(child: Text('कोई यूजर नहीं मिला'))
-                  : ListView.builder(
-                      itemCount: _filteredChats.length,
-                      itemBuilder: (context, index) {
-                        final chat = _filteredChats[index];
-                        return ListTile(
-                          leading: CircleAvatar(backgroundColor: Theme.of(context).primaryColor, child: Text(chat['name']!.substring(0, 1), style: const TextStyle(color: Colors.white))),
-                          title: Text(chat['name']!, style: const TextStyle(fontWeight: FontWeight.bold)),
-                          subtitle: Text(chat['msg']!),
-                          trailing: Text(chat['time']!, style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                          onTap: () {
-                            Navigator.push(context, MaterialPageRoute(builder: (context) => ChatDetailScreen(userName: chat['name']!)));
-                          },
-                        );
-                      },
-                    ),
-              // कॉल्स टैब (वर्किंग बटन के साथ)
-              ListView.builder(
-                itemCount: 2,
-                itemBuilder: (context, index) {
-                  List<String> names = ['राहुल सिंह', 'प्रिया शर्मा'];
-                  return ListTile(
-                    leading: const CircleAvatar(backgroundColor: Colors.grey, child: Icon(Icons.person, color: Colors.white)),
-                    title: Text(names[index], style: const TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Text(index == 0 ? 'आज, 9:15 AM' : 'कल, 8:45 PM'),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(25)),
+                    child: Row(
                       children: [
-                        IconButton(
-                          icon: Icon(Icons.phone, color: Theme.of(context).primaryColor),
-                          onPressed: () {
-                            Navigator.push(context, MaterialPageRoute(builder: (context) => CallScreen(userName: names[index], isVideo: false)));
-                          },
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.call_end, color: Colors.white, size: 28),
-onPressed: () => Navigator.pop(context),
-),
-),
-],
-),
-),
-],
-),
-),
-);
+                        IconButton(icon: const Icon(Icons.attach_file), onPressed: () => showModalBottomSheet(context: context, builder: (c) => Wrap(children: [ListTile(leading: const Icon(Icons.image), title: const Text('फोटो'), onTap: () { Navigator.pop(c); setState(() => _msgs.add({'text': 'Image.png', 'isMe': true, 'type': 'image'})); }), ListTile(leading: const Icon(Icons.file_present), title: const Text('डॉक्यूमेंट'), onTap: () { Navigator.pop(c); setState(() => _msgs.add({'text': 'Document.pdf', 'isMe': true, 'type': 'doc'})); })]))),
+                        Expanded(child: TextField(controller: _msg, decoration: const InputDecoration(hintText: 'मैसेज...', border: InputBorder.none))),
+                      ],
+                    ),
+                  ),
+                ),
+                CircleAvatar(backgroundColor: const Color(0xFF075E54), child: IconButton(icon: const Icon(Icons.send, color: Colors.white), onPressed: () { if(_msg.text.isEmpty) return; setState(() => _msgs.add({'text': _msg.text, 'isMe': true, 'type': 'text'})); _msg.clear(); })),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
-                }
+
+class CallScreen extends StatelessWidget {
+  final String userName;
+  final bool isVideo;
+  const CallScreen({super.key, required this.userName, required this.isVideo});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF075E54),
+      body: Column(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          Column(children: [Text(userName, style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold)), const SizedBox(height: 8), Text(isVideo ? 'वीडियो कॉल...' : 'ऑडियो कॉल...', style: const TextStyle(color: Colors.white70))]),
+          CircleAvatar(radius: 60, backgroundColor: Colors.white24, child: Icon(isVideo ? Icons.videocam : Icons.person, size: 60, color: Colors.white)),
+          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            
