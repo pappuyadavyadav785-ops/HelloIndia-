@@ -33,7 +33,6 @@ class MyApp extends StatelessWidget {
   }
 }
 
-// 1. लॉगिन और साइन-अप स्क्रीन
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -99,7 +98,6 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 }
 
-// 2. मुख्य होम स्क्रीन (WhatsApp स्टाइल टैब्स)
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
@@ -130,7 +128,6 @@ class HomeScreen extends StatelessWidget {
           ),
           body: TabBarView(
             children: [
-              // चैट लिस्ट
               ListView.builder(
                 itemCount: 4,
                 itemBuilder: (context, index) {
@@ -147,7 +144,6 @@ class HomeScreen extends StatelessWidget {
                   );
                 },
               ),
-              // कॉल्स लिस्ट
               ListView.builder(
                 itemCount: 2,
                 itemBuilder: (context, index) {
@@ -166,7 +162,6 @@ class HomeScreen extends StatelessWidget {
                   );
                 },
               ),
-              // प्रोफाइल
               Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -195,8 +190,6 @@ class HomeScreen extends StatelessWidget {
     );
   }
 }
-
-// 3. एडवांस चैट स्क्रीन (कॉलिंग और मीडिया अटैचमेंट फीचर्स के साथ)
 class ChatDetailScreen extends StatefulWidget {
   final String userName;
   const ChatDetailScreen({super.key, required this.userName});
@@ -251,4 +244,161 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         children: [
           Expanded(
             child: Container(
-              
+              color: const Color(0xFFEFE7E2),
+              child: _messages.isEmpty
+                  ? Center(child: Text('${widget.userName} के साथ चैट और media शेयर करें', style: const TextStyle(color: Colors.grey)))
+                  : ListView.builder(
+                      padding: const EdgeInsets.all(12),
+                      itemCount: _messages.length,
+                      itemBuilder: (context, index) {
+                        final msg = _messages[index];
+                        final isMe = msg['isMe'];
+                        return Align(
+                          alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+                          child: Container(
+                            margin: const EdgeInsets.symmetric(vertical: 4),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: isMe ? const Color(0xFFDCF8C6) : Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: msg['type'] == 'text'
+                                ? Text(msg['text'], style: const TextStyle(fontSize: 16))
+                                : Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(msg['type'] == 'image' ? Icons.image : Icons.insert_drive_file, color: Colors.grey),
+                                      const SizedBox(width: 8),
+                                      Text(msg['text'], style: const TextStyle(fontSize: 16, fontStyle: FontStyle.italic)),
+                                    ],
+                                  ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(25), boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 5)]),
+                    child: Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.attach_file, color: Colors.grey),
+                          onPressed: () {
+                            showModalBottomSheet(
+                              context: context,
+                              builder: (context) => Wrap(
+                                children: [
+                                  ListTile(
+                                    leading: const Icon(Icons.image, color: Colors.green),
+                                    title: const Text('फोटो / इमेजेस भेजें'),
+                                    onTap: () {
+                                      Navigator.pop(context);
+                                      _sendMessage('Photo_File.png', type: 'image');
+                                    },
+                                  ),
+                                  ListTile(
+                                    leading: const Icon(Icons.insert_drive_file, color: Colors.blue),
+                                    title: const Text('डॉक्यूमेंट फ़ाइल भेजें'),
+                                    onTap: () {
+                                      Navigator.pop(context);
+                                      _sendMessage('Document_File.pdf', type: 'doc');
+                                    },
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                        Expanded(
+                          child: TextField(
+                            controller: _messageController,
+                            decoration: const InputDecoration(hintText: 'मैसेज टाइप करें...', border: InputBorder.none),
+                          ),
+                        ),
+                        IconButton(icon: const Icon(Icons.camera_alt, color: Colors.grey), onPressed: () => _sendMessage('Camera_Capture.jpg', type: 'image')),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 5),
+                CircleAvatar(
+                  backgroundColor: Theme.of(context).primaryColor,
+                  radius: 22,
+                  child: IconButton(
+                    icon: const Icon(Icons.send, color: Colors.white, size: 20),
+                    onPressed: () => _sendMessage(_messageController.text),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class CallScreen extends StatelessWidget {
+  final String userName;
+  final bool isVideo;
+  const CallScreen({super.key, required this.userName, required this.isVideo});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF075E54),
+      body: SafeArea(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 60.0),
+              child: Column(
+                children: [
+                  Text(userName, style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  Text(isVideo ? 'वीडियो कॉल कनेक्ट हो रहा है...' : 'ऑдио कॉल कनेक्ट हो रहा है...', style: const TextStyle(color: Colors.white70, fontSize: 16)),
+                ],
+              ),
+            ),
+            Center(
+              child: CircleAvatar(
+                radius: 60,
+                backgroundColor: Colors.white24,
+                child: isVideo ? const Icon(Icons.videocam, size: 60, color: Colors.white) : const Icon(Icons.person, size: 60, color: Colors.white),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 60.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircleAvatar(
+                    radius: 28,
+                    backgroundColor: Colors.white24,
+                    child: IconButton(icon: Icon(isVideo ? Icons.videocam_off : Icons.mic_off, color: Colors.white), onPressed: () {}),
+                  ),
+                  const SizedBox(width: 40),
+                  CircleAvatar(
+                    radius: 32,
+                    backgroundColor: Colors.red,
+                    child: IconButton(
+                      icon: const Icon(Icons.call_end, color: Colors.white, size: 28),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
