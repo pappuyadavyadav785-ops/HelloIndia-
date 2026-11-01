@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 
 void main() async {
@@ -28,11 +29,20 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
-      body: Center(
-        child: Text(
-          'Welcome to Hello India App',
-          style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+    // PopScope बैक बटन को संभालने के लिए है ताकि एक बार में ऐप बैक/बंद हो सके
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        // बैक बटन दबाते ही ऐप को पूरी तरह बंद कर देगा
+        await SystemNavigator.pop();
+      },
+      child: const Scaffold(
+        body: Center(
+          child: Text(
+            'Welcome to Hello India App',
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+          ),
         ),
       ),
     );
