@@ -51,15 +51,24 @@ class _HelloIndiaBootstrapState extends State<HelloIndiaBootstrap> {
     _initializeServices();
   }
 
-  Future<void> _initializeServices() async {
-    try {
-      // 1. Initialize Firebase with 10-second timeout to prevent deadlocks
-      await Firebase.initializeApp().timeout(
-        const Duration(seconds: 10),
-        onTimeout: () {
-          throw TimeoutException('Firebase initialization timed out. Check network or configuration.');
-        },
-      );
+Future<void> _initializeServices() async {
+  try {
+    // 1. Initialize Firebase with 10-second timeout to prevent deadlocks
+    await Firebase.initializeApp(
+      options: const FirebaseOptions(
+        apiKey: "AIzaSyAAfuxxRLF1tp741VSzk1-Gn_QQzdoOXFM", 
+        appId: "1:645310611056:android:c069938f1373d6b2a1beb5",
+        messagingSenderId: "645310611056",
+        projectId: "helloindia-acf1f",
+        storageBucket: "helloindia-acf1f.firebasestorage.app",
+      ),
+    ).timeout(
+      const Duration(seconds: 10),
+      onTimeout: () {
+        throw TimeoutException('Firebase initialization timed out. Check network or configuration.');
+      },
+    );
+    
 
       if (mounted) {
         setState(() {
