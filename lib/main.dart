@@ -1,50 +1,120 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
 
-void main() {
-  runApp(const MaterialApp(home: AuthScreen(), debugShowCheckedModeBanner: false));
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+  runApp(HelloIndiaApp());
 }
 
-class AuthScreen extends StatefulWidget {
-  const AuthScreen({super.key});
+class HelloIndiaApp extends StatelessWidget {
   @override
-  State<AuthScreen> createState() => _AuthScreenState();
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'HelloIndia',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(primarySwatch: Colors.green),
+      home: AuthGate(),
+    );
+  }
 }
 
-class _AuthScreenState extends State<AuthScreen> {
-  bool isOtp = false;
-  final _phone = TextEditingController();
-  final _otp = TextEditingController();
+class AuthGate extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Scaffold(body: Center(child: CircularProgressIndicator()));
+        }
+        if (snapshot.hasData) return HomeScreen();
+        return PhoneLoginScreen();
+      },
+    );
+  }
+}
+
+class PhoneLoginScreen extends StatefulWidget {
+  @override
+  State<PhoneLoginScreen> createState() => _PhoneLoginScreenState();
+}
+
+class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
+  final phoneCtrl = TextEditingController();
+  final otpCtrl = TextEditingController();
+  String verificationId = "";
+  bool otpSent = false;
+  bool loading = false;
+
+  void sendOTP() async {
+    if (phoneCtrl.text.length < 10) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("10 digit number dalo")));
+      return;
+    }
+    setState(() => loading = true);
+    await FirebaseAuth.instance.verifyPhoneNumber(
+      phoneNumber: '+91${phoneCtrl.text.trim()}',
+      verificationCompleted: (c) async {
+        await FirebaseAuth.instance.signInWithCredential(c);
+      },
+      verificationFailed: (e) {
+        setState(() => loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: ${e.message}")));
+      },
+      codeSent: (verId, token) {
+        setState(() {
+          verificationId = verId;
+          otpSent = true;
+          loading = false;
+        });
+      },
+      codeAutoRetrievalTimeout: (verId) => verificationId = verId,
+    );
+  }
+
+  void verifyOTP() async {
+    try {
+      setState(() => loading = true);
+      var cred = PhoneAuthProvider.credential(verificationId: verificationId, smsCode: otpCtrl.text.trim());
+      var userCred = await FirebaseAuth.instance.signInWithCredential(cred);
+      await FirebaseFirestore.instance.collection('users').doc(userCred.user!.uid).set({
+        'uid': userCred.user!.uid,
+        'phone': '+91${phoneCtrl.text.trim()}',
+        'name': 'User ${phoneCtrl.text.trim().substring(6)}',
+        'createdAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      setState(() => loading = false);
+    } catch (e) {
+      setState(() => loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Galat OTP")));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(title: Text("HelloIndia - OTP Login")),
       body: Padding(
-        padding: const EdgeInsets.all(24.0),
+        padding: EdgeInsets.all(20),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.lock_person, size: 80, color: Color(0xFF075E54)),
-            const SizedBox(height: 16),
-            Text(isOtp ? 'OTP सत्यापन' : 'लॉगिन / साइन अप', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 24),
-            TextField(
-              controller: isOtp ? _otp : _phone,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(labelText: isOtp ? '6-अंकों का OTP (123456)' : 'मोबाइल नंबर', border: const OutlineInputBorder()),
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF075E54), foregroundColor: Colors.white, minimumSize: const Size(double.infinity, 50)),
-              onPressed: () {
-                if (!isOtp) {
-                  if (_phone.text.length >= 10) setState(() => isOtp = true);
-                } else {
-                  if (_otp.text == "123456") Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const HomeScreen()));
-                }
-              },
-              child: Text(isOtp ? 'सत्यापित करें' : 'OTP प्राप्त करें'),
-            ),
+            if (!otpSent) ...[
+              TextField(controller: phoneCtrl, keyboardType: TextInputType.phone, decoration: InputDecoration(labelText: "Mobile Number", prefixText: "+91 ", border: OutlineInputBorder())),
+              SizedBox(height: 20),
+              loading ? CircularProgressIndicator() : ElevatedButton(onPressed: sendOTP, child: Text("OTP Bhejo")),
+            ] else ...[
+              TextField(controller: otpCtrl, keyboardType: TextInputType.number, decoration: InputDecoration(labelText: "6 Digit OTP", border: OutlineInputBorder())),
+              SizedBox(height: 20),
+              loading ? CircularProgressIndicator() : ElevatedButton(onPressed: verifyOTP, child: Text("Verify & Login")),
+              TextButton(onPressed: () => setState(() => otpSent = false), child: Text("Number Badlo"))
+            ]
           ],
         ),
       ),
@@ -53,131 +123,160 @@ class _AuthScreenState extends State<AuthScreen> {
 }
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  bool _isSearch = false;
-  final _search = TextEditingController();
-  final List<Map<String, String>> _all = [
-    {'name': 'अमित कुमार', 'msg': 'फोटो देख ली मैंने'},
-    {'name': 'राहुल सिंह', 'msg': 'कल फाइल भेज देना'},
-    {'name': 'प्रिया शर्मा', 'msg': 'वीडियो कॉल पर आओ'},
-  ];
-  List<Map<String, String>> _chats = [];
-
-  @override
-  void initState() { _chats = _all; super.initState(); }
-
+  String searchQuery = "";
+  final searchCtrl = TextEditingController();
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, res) async { if (!didPop) await SystemNavigator.pop(); },
-      child: DefaultTabController(
-        length: 3,
-        child: Scaffold(
-          appBar: AppBar(
-            backgroundColor: const Color(0xFF075E54),
-            title: _isSearch 
-                ? TextField(controller: _search, style: const TextStyle(color: Colors.white), decoration: const InputDecoration(hintText: 'खोजें...', border: InputBorder.none), onChanged: (q) => setState(() => _chats = _all.where((c) => c['name']!.contains(q)).toList()))
-                : const Text('Hello India', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            actions: [IconButton(icon: Icon(_isSearch ? Icons.close : Icons.search, color: Colors.white), onPressed: () => setState(() { _isSearch = !_isSearch; _search.clear(); _chats = _all; }))],
-            bottom: const TabBar(indicatorColor: Colors.white, labelColor: Colors.white, unselectedLabelColor: Colors.white70, tabs: [Tab(text: 'CHATS'), Tab(text: 'CALLS'), Tab(text: 'PROFILE')]),
+    var currentUid = FirebaseAuth.instance.currentUser!.uid;
+    return Scaffold(
+      appBar: AppBar(title: Text("HelloIndia"), actions: [IconButton(icon: Icon(Icons.logout), onPressed: () => FirebaseAuth.instance.signOut())]),
+      body: Column(
+        children: [
+          Padding(
+            padding: EdgeInsets.all(10),
+            child: TextField(
+              controller: searchCtrl,
+              decoration: InputDecoration(hintText: "Search user by phone/name...", prefixIcon: Icon(Icons.search), border: OutlineInputBorder()),
+              onChanged: (v) => setState(() => searchQuery = v.toLowerCase()),
+            ),
           ),
-          body: TabBarView(
-            children: [
-              ListView.builder(
-                itemCount: _chats.length,
-                itemBuilder: (context, i) => ListTile(
-                  leading: CircleAvatar(backgroundColor: const Color(0xFF075E54), child: Text(_chats[i]['name']!.substring(0, 1), style: const TextStyle(color: Colors.white))),
-                  title: Text(_chats[i]['name']!, style: const TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Text(_chats[i]['msg']!),
-                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => ChatDetailScreen(userName: _chats[i]['name']!))),
-                ),
-              ),
-              ListView.builder(
-                itemCount: 2,
-                itemBuilder: (context, i) => ListTile(
-                  leading: const CircleAvatar(child: Icon(Icons.person)),
-                  title: Text(i == 0 ? 'राहुल सिंह' : 'प्रिया शर्मा'),
-                  subtitle: Text(i == 0 ? 'आज, 9:15 AM' : 'कल, 8:45 PM'),
-                  trailing: IconButton(icon: Icon(i == 0 ? Icons.phone : Icons.videocam, color: const Color(0xFF075E54)), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => CallScreen(userName: i == 0 ? 'राहुल सिंह' : 'प्रिया शर्मा', isVideo: i != 0)))),
-                ),
-              ),
-              Center(child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white), onPressed: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const AuthScreen())), child: const Text('लॉग आउट'))),
-            ],
-          ),
-        ),
+          Expanded(
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance.collection('users').snapshots(),
+              builder: (context, snap) {
+                if (!snap.hasData) return Center(child: CircularProgressIndicator());
+                var users = snap.data!.docs.where((d) => d.id != currentUid).toList();
+                if (searchQuery.isNotEmpty) {
+                  users = users.where((d) {
+                    var data = d.data() as Map<String, dynamic>;
+                    return (data['name'] ?? '').toString().toLowerCase().contains(searchQuery) || (data['phone'] ?? '').toString().toLowerCase().contains(searchQuery);
+                  }).toList();
+                }
+                if (users.isEmpty) return Center(child: Text("Koi user nahi mila - Dusre number se login karke dekho"));
+                return ListView.builder(
+                  itemCount: users.length,
+                  itemBuilder: (c, i) {
+                    var data = users[i].data() as Map<String, dynamic>;
+                    return ListTile(
+                      leading: CircleAvatar(child: Text(data['name'][0])),
+                      title: Text(data['name']),
+                      subtitle: Text(data['phone']),
+                      trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                        IconButton(icon: Icon(Icons.call, color: Colors.green), onPressed: () => Navigator.push(c, MaterialPageRoute(builder: (_) => CallScreen(name: data['name'], isVideo: false)))),
+                        IconButton(icon: Icon(Icons.videocam, color: Colors.blue), onPressed: () => Navigator.push(c, MaterialPageRoute(builder: (_) => CallScreen(name: data['name'], isVideo: true)))),
+                      ]),
+                      onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => ChatScreen(otherUid: data['uid'], otherName: data['name']))),
+                    );
+                  },
+                );
+              },
+            ),
+          )
+        ],
       ),
     );
   }
 }
 
-class ChatDetailScreen extends StatefulWidget {
-  final String userName;
-  const ChatDetailScreen({super.key, required this.userName});
+class ChatScreen extends StatefulWidget {
+  final String otherUid, otherName;
+  ChatScreen({required this.otherUid, required this.otherName});
   @override
-  State<ChatDetailScreen> createState() => _ChatDetailScreenState();
+  State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatDetailScreenState extends State<ChatDetailScreen> {
-  final List<Map<String, dynamic>> _msgs = [];
-  final _msg = TextEditingController();
+class _ChatScreenState extends State<ChatScreen> {
+  final msgCtrl = TextEditingController();
+  String get chatId {
+    var myUid = FirebaseAuth.instance.currentUser!.uid;
+    return myUid.hashCode <= widget.otherUid.hashCode ? "${myUid}_${widget.otherUid}" : "${widget.otherUid}_${myUid}";
+  }
+
+  void sendMessage({String? text, String? imageBase64, String? fileName}) async {
+    if ((text == null || text.isEmpty) && imageBase64 == null && fileName == null) return;
+    await FirebaseFirestore.instance.collection('chats').doc(chatId).collection('messages').add({
+      'sender': FirebaseAuth.instance.currentUser!.uid,
+      'text': text ?? "",
+      'image': imageBase64 ?? "",
+      'fileName': fileName ?? "",
+      'time': FieldValue.serverTimestamp(),
+    });
+    msgCtrl.clear();
+  }
+
+  Future<void> pickImage() async {
+    var picker = ImagePicker();
+    var x = await picker.pickImage(source: ImageSource.gallery, imageQuality: 30);
+    if (x == null) return;
+    var bytes = await File(x.path).readAsBytes();
+    if (bytes.length > 900000) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Photo bada hai, chhota photo chuno")));
+      return;
+    }
+    String base64 = base64Encode(bytes);
+    sendMessage(imageBase64: base64, text: "[Photo]");
+  }
+
+  Future<void> pickFile() async {
+    var result = await FilePicker.platform.pickFiles();
+    if (result == null) return;
+    var file = result.files.first;
+    if (file.size > 900000) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("File 1MB se kam hona chahiye bina Storage ke")));
+      return;
+    }
+    String base64 = base64Encode(file.bytes!);
+    sendMessage(imageBase64: base64, fileName: file.name, text: "[File: ${file.name}]");
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF075E54),
-        iconTheme: const IconThemeData(color: Colors.white),
-        title: Text(widget.userName, style: const TextStyle(color: Colors.white)),
-        actions: [
-          IconButton(icon: const Icon(Icons.videocam), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => CallScreen(userName: widget.userName, isVideo: true)))),
-          IconButton(icon: const Icon(Icons.call), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => CallScreen(userName: widget.userName, isVideo: false)))),
-        ],
-      ),
+      appBar: AppBar(title: Text(widget.otherName)),
       body: Column(
         children: [
           Expanded(
-            child: Container(
-              color: const Color(0xFFEFE7E2),
-              child: ListView.builder(
-                padding: const EdgeInsets.all(12),
-                itemCount: _msgs.length,
-                itemBuilder: (context, i) => Align(
-                  alignment: _msgs[i]['isMe'] ? Alignment.centerRight : Alignment.centerLeft,
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(vertical: 4),
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(color: _msgs[i]['isMe'] ? const Color(0xFFDCF8C6) : Colors.white, borderRadius: BorderRadius.circular(12)),
-                    child: _msgs[i]['type'] == 'text' ? Text(_msgs[i]['text']) : Row(mainAxisSize: MainAxisSize.min, children: [Icon(_msgs[i]['type'] == 'image' ? Icons.image : Icons.insert_drive_file), const SizedBox(width: 8), Text(_msgs[i]['text'])]),
-                  ),
-                ),
-              ),
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance.collection('chats').doc(chatId).collection('messages').orderBy('time', descending: true).snapshots(),
+              builder: (c, snap) {
+                if (!snap.hasData) return Center(child: CircularProgressIndicator());
+                return ListView.builder(
+                  reverse: true,
+                  itemCount: snap.data!.docs.length,
+                  itemBuilder: (c, i) {
+                    var data = snap.data!.docs[i].data() as Map<String, dynamic>;
+                    bool isMe = data['sender'] == FirebaseAuth.instance.currentUser!.uid;
+                    return Align(
+                      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+                      child: Container(
+                        margin: EdgeInsets.all(6),
+                        padding: EdgeInsets.all(10),
+                        decoration: BoxDecoration(color: isMe ? Colors.green[100] : Colors.grey[200], borderRadius: BorderRadius.circular(10)),
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          if ((data['image'] ?? "").toString().isNotEmpty) Image.memory(base64Decode(data['image']), width: 180),
+                          if ((data['text'] ?? "").toString().isNotEmpty) Text(data['text']),
+                          if ((data['fileName'] ?? "").toString().isNotEmpty) Text("📎 ${data['fileName']}", style: TextStyle(fontWeight: FontWeight.bold)),
+                        ]),
+                      ),
+                    );
+                  },
+                );
+              },
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Container(
-                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(25)),
-                    child: Row(
-                      children: [
-                        IconButton(icon: const Icon(Icons.attach_file), onPressed: () => showModalBottomSheet(context: context, builder: (c) => Wrap(children: [ListTile(leading: const Icon(Icons.image), title: const Text('फोटो'), onTap: () { Navigator.pop(c); setState(() => _msgs.add({'text': 'Image.png', 'isMe': true, 'type': 'image'})); }), ListTile(leading: const Icon(Icons.file_present), title: const Text('डॉक्यूमेंट'), onTap: () { Navigator.pop(c); setState(() => _msgs.add({'text': 'Document.pdf', 'isMe': true, 'type': 'doc'})); })]))),
-                        Expanded(child: TextField(controller: _msg, decoration: const InputDecoration(hintText: 'मैसेज...', border: InputBorder.none))),
-                      ],
-                    ),
-                  ),
-                ),
-                CircleAvatar(backgroundColor: const Color(0xFF075E54), child: IconButton(icon: const Icon(Icons.send, color: Colors.white), onPressed: () { if(_msg.text.isEmpty) return; setState(() => _msgs.add({'text': _msg.text, 'isMe': true, 'type': 'text'})); _msg.clear(); })),
-              ],
-            ),
-          ),
+          Row(
+            children: [
+              IconButton(icon: Icon(Icons.photo), onPressed: pickImage),
+              IconButton(icon: Icon(Icons.attach_file), onPressed: pickFile),
+              Expanded(child: TextField(controller: msgCtrl, decoration: InputDecoration(hintText: "Message likho..."))),
+              IconButton(icon: Icon(Icons.send, color: Colors.green), onPressed: () => sendMessage(text: msgCtrl.text.trim())),
+            ],
+          )
         ],
       ),
     );
@@ -185,18 +284,22 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 }
 
 class CallScreen extends StatelessWidget {
-  final String userName;
+  final String name;
   final bool isVideo;
-  const CallScreen({super.key, required this.userName, required this.isVideo});
-
+  CallScreen({required this.name, required this.isVideo});
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF075E54),
-      body: Column(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          Column(children: [Text(userName, style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold)), const SizedBox(height: 8), Text(isVideo ? 'वीडियो कॉल...' : 'ऑडियो कॉल...', style: const TextStyle(color: Colors.white70))]),
-          CircleAvatar(radius: 60, backgroundColor: Colors.white24, child: Icon(isVideo ? Icons.videocam : Icons.person, size: 60, color: Colors.white)),
-          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            
+      backgroundColor: Colors.black87,
+      body: Center(
+        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(isVideo ? Icons.videocam : Icons.call, size: 80, color: Colors.white),
+          SizedBox(height: 20),
+          Text("${isVideo ? "Video" : "Voice"} Calling $name...", style: TextStyle(color: Colors.white, fontSize: 20)),
+          SizedBox(height: 40),
+          ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.red, shape: CircleBorder(), padding: EdgeInsets.all(20)), onPressed: () => Navigator.pop(context), child: Icon(Icons.call_end, size: 30)),
+        ]),
+      ),
+    );
+  }
+}
