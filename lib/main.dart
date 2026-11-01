@@ -1,4 +1,3 @@
-// lib/main.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -6,10 +5,8 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 void main() {
-  // Ensure engine bindings are wired before any plugin call
   WidgetsFlutterBinding.ensureInitialized();
-
-  // Set system UI overlay style
+  
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -19,21 +16,8 @@ void main() {
     ),
   );
 
-  // Catch framework-level errors
-  FlutterError.onError = (FlutterErrorDetails details) {
-    FlutterError.presentError(details);
-    debugPrint('FlutterError caught: ${details.exceptionAsString()}');
-  };
-
-  // Run app inside guarded zone to catch unhandled async errors
-  runZonedGuarded<Future<void>>(() async {
-    runApp(const HelloIndiaBootstrap());
-  }, (Object error, StackTrace stack) {
-    debugPrint('Uncaught async error: $error\n$stack');
-  });
+  runApp(const HelloIndiaBootstrap());
 }
-
-/// Root application widget responsible for progressive initialization
 
 class HelloIndiaBootstrap extends StatefulWidget {
   const HelloIndiaBootstrap({Key? key}) : super(key: key);
@@ -66,7 +50,13 @@ class _HelloIndiaBootstrapState extends State<HelloIndiaBootstrap> {
           projectId: "helloindia-acf1f",
           storageBucket: "helloindia-acf1f.firebasestorage.app",
         ),
+      ).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          throw TimeoutException('Firebase initialization timed out.');
+        },
       );
+
       if (mounted) {
         setState(() {
           _initialized = true;
@@ -81,44 +71,78 @@ class _HelloIndiaBootstrapState extends State<HelloIndiaBootstrap> {
     }
   }
 
-  // 1. OTP भेजने का फंक्शन
   Future<void> _sendOTP() async {
     if (_phoneController.text.isEmpty) return;
-    
-    await FirebaseAuth.instance.verifyPhoneNumber(
-      phoneNumber: "+91${_phoneController.text}", // +91 इंडिया कोड के साथ
-      verificationCompleted: (PhoneAuthCredential credential) async {
-        await FirebaseAuth.instance.signInWithCredential(credential);
-        _loginSuccess();
-      },
-      verificationFailed: (FirebaseAuthException e) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("OTP Failed: ${e.message}")));
-      },
-      codeSent: (String verId, int? resendToken) {
-        setState(() {
-          _verificationId = verId;
-          _otpSent = true;
-        });
-      },
-      codeAutoRetrievalTimeout: (String verId) {},
+    try {
+      await FirebaseAuth.instance.verifyPhoneNumber(
+        phoneNumber: "+91${_phoneController.text}",
+        verificationCompleted: (PhoneAuthCredential credential) async {
+          await FirebaseAuth.instance.signInWithCredential(credential);
+          _loginSuccess();
+        },
+        verificationFailed: (FirebaseAuthException e) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("OTP Failed: ${e.message}")),
+          );
+        },
+        codeSent: (String verId, int? resendToken) {
+          setState(() {
+            _verificationId = verId;
+            _otpSent = true;
+          });
+        },
+        codeAutoRetrievalTimeout: (String verId) {},
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error: $e")),
+      );
+    }
+  }
+
+  Future<void> _verifyOTP() async {
+    if (_otpController.text.isEmpty) return;
+    try {
+      PhoneAuthCredential credential = PhoneAuthProvider.credential(
+        verificationId: _verificationId,
+        smsCode: _otpController.text,
+      );
+      await FirebaseAuth.instance.signInWithCredential(credential);
+      _loginSuccess();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("गलत OTP, कृपया दोबारा जांचें।")),
+      );
+    }
+  }
+
+  Future<void> _signInWithGoogle() async {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Google Sign-In Connecting...")),
     );
   }
+
+  void _loginSuccess() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("लॉगिन सफल! HelloIndia में आपका स्वागत है।")),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_initError != null) {
-      return Directionality(
-        textDirection: TextDirection.ltr,
-        child: Scaffold(body: Center(child: Text("Error: $_initError"))),
+      return MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(body: Center(child: Text("Error: $_initError"))),
       );
     }
     if (!_initialized) {
-      return const Directionality(
-        textDirection: TextDirection.ltr,
-        child: Scaffold(body: Center(child: CircularProgressIndicator(color: Colors.orange))),
+      return const MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(body: Center(child: CircularProgressIndicator(color: Colors.orange))),
       );
     }
 
-    // यहाँ हमने MaterialApp जोड़ दिया है ताकि एरर ठीक हो जाए
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       home: Scaffold(
@@ -130,11 +154,13 @@ class _HelloIndiaBootstrapState extends State<HelloIndiaBootstrap> {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // ऐप लोगो और नाम
                 Center(
                   child: Container(
                     padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(color: Colors.orange, borderRadius: BorderRadius.circular(20)),
+                    decoration: BoxDecoration(
+                      color: Colors.orange, 
+                      borderRadius: BorderRadius.circular(20),
+                    ),
                     child: const Text("HI", style: TextStyle(fontSize: 48, fontWeight: FontWeight.bold, color: Colors.white)),
                   ),
                 ),
@@ -143,7 +169,6 @@ class _HelloIndiaBootstrapState extends State<HelloIndiaBootstrap> {
                 const SizedBox(height: 40),
 
                 if (!_otpSent) ...[
-                  // मोबाइल नंबर इनपुट
                   TextField(
                     controller: _phoneController,
                     keyboardType: TextInputType.phone,
@@ -160,7 +185,6 @@ class _HelloIndiaBootstrapState extends State<HelloIndiaBootstrap> {
                     child: const Text("OTP भेजें", style: TextStyle(fontSize: 16, color: Colors.white)),
                   ),
                 ] else ...[
-                  // OTP इनपुट स्क्रीन
                   TextField(
                     controller: _otpController,
                     keyboardType: TextInputType.number,
@@ -187,7 +211,6 @@ class _HelloIndiaBootstrapState extends State<HelloIndiaBootstrap> {
                 ),
                 const SizedBox(height: 30),
 
-                // Google Sign In बटन
                 OutlinedButton.icon(
                   onPressed: _signInWithGoogle,
                   icon: Image.network('https://wikimedia.org', height: 24),
@@ -201,6 +224,4 @@ class _HelloIndiaBootstrapState extends State<HelloIndiaBootstrap> {
       ),
     );
   }
-  
-
-
+}
