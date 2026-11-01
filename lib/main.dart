@@ -34,6 +34,7 @@ void main() {
 }
 
 /// Root application widget responsible for progressive initialization
+
 class HelloIndiaBootstrap extends StatefulWidget {
   const HelloIndiaBootstrap({Key? key}) : super(key: key);
 
@@ -44,6 +45,10 @@ class HelloIndiaBootstrap extends StatefulWidget {
 class _HelloIndiaBootstrapState extends State<HelloIndiaBootstrap> {
   bool _initialized = false;
   String? _initError;
+  final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _otpController = TextEditingController();
+  bool _otpSent = false;
+  String _verificationId = "";
 
   @override
   void initState() {
@@ -51,32 +56,23 @@ class _HelloIndiaBootstrapState extends State<HelloIndiaBootstrap> {
     _initializeServices();
   }
 
-Future<void> _initializeServices() async {
-  try {
-    // 1. Initialize Firebase with 10-second timeout to prevent deadlocks
-    await Firebase.initializeApp(
-      options: const FirebaseOptions(
-        apiKey: "AIzaSyAAfuxxRLF1tp741VSzk1-Gn_QQzdoOXFM", 
-        appId: "1:645310611056:android:c069938f1373d6b2a1beb5",
-        messagingSenderId: "645310611056",
-        projectId: "helloindia-acf1f",
-        storageBucket: "helloindia-acf1f.firebasestorage.app",
-      ),
-    ).timeout(
-      const Duration(seconds: 10),
-      onTimeout: () {
-        throw TimeoutException('Firebase initialization timed out. Check network or configuration.');
-      },
-    );
-    
-
+  Future<void> _initializeServices() async {
+    try {
+      await Firebase.initializeApp(
+        options: const FirebaseOptions(
+          apiKey: "AIzaSyAAfuxxRLF1tp741VSzk1-Gn_QQzdoOXFM", 
+          appId: "1:645310611056:android:c069938f1373d6b2a1beb5",
+          messagingSenderId: "645310611056",
+          projectId: "helloindia-acf1f",
+          storageBucket: "helloindia-acf1f.firebasestorage.app",
+        ),
+      );
       if (mounted) {
         setState(() {
           _initialized = true;
         });
       }
     } catch (e) {
-      debugPrint('Initialization error: $e');
       if (mounted) {
         setState(() {
           _initError = e.toString();
@@ -85,247 +81,136 @@ Future<void> _initializeServices() async {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'HelloIndia',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFFFF6600), // Saffron brand accent
-          primary: const Color(0xFFFF6600),
-          secondary: const Color(0xFF048543), // Green brand accent
-          surface: Colors.white,
-        ),
-        scaffoldBackgroundColor: Colors.white,
-        fontFamily: 'Roboto',
-      ),
-      home: _buildHomeView(),
+  // 1. OTP भेजने का फंक्शन
+  Future<void> _sendOTP() async {
+    if (_phoneController.text.isEmpty) return;
+    
+    await FirebaseAuth.instance.verifyPhoneNumber(
+      phoneNumber: "+91${_phoneController.text}", // +91 इंडिया कोड के साथ
+      verificationCompleted: (PhoneAuthCredential credential) async {
+        await FirebaseAuth.instance.signInWithCredential(credential);
+        _loginSuccess();
+      },
+      verificationFailed: (FirebaseAuthException e) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("OTP Failed: ${e.message}")));
+      },
+      codeSent: (String verId, int? resendToken) {
+        setState(() {
+          _verificationId = verId;
+          _otpSent = true;
+        });
+      },
+      codeAutoRetrievalTimeout: (String verId) {},
     );
   }
 
-  Widget _buildHomeView() {
-    // If initialization threw an error, render fallback error screen
-    if (_initError != null) {
-      return Scaffold(
-        body: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.error_outline, color: Colors.redAccent, size: 64),
-                const SizedBox(height: 16),
-                const Text(
-                  'Initialization Error',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  _initError!,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 14, color: Colors.black54),
-                ),
-                const SizedBox(height: 24),
-                ElevatedButton.icon(
-                  onPressed: () {
-                    setState(() {
-                      _initError = null;
-                      _initialized = false;
-                    });
-                    _initializeServices();
-                  },
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Retry'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFFF6600),
-                    foregroundColor: Colors.white,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+  // 2. OTP वेरीफाई करने का फंक्शन
+  Future<void> _verifyOTP() async {
+    if (_otpController.text.isEmpty) return;
+    try {
+      PhoneAuthCredential credential = PhoneAuthProvider.credential(
+        verificationId: _verificationId,
+        smsCode: _otpController.text,
       );
+      await FirebaseAuth.instance.signInWithCredential(credential);
+      _loginSuccess();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("गलत OTP, कृपया दोबारा जांचें।")));
     }
-
-    // While initializing, show the branded splash screen
-    if (!_initialized) {
-      return const SplashScreen();
-    }
-
-    // Services ready: hand off to auth state gate
-    return const AuthStateGate();
   }
-}
 
-/// Branded Splash Screen with "HI" identity
-class SplashScreen extends StatelessWidget {
-  const SplashScreen({Key? key}) : super(key: key);
+  // 3. Google Sign-In का फंक्शन
+  Future<void> _signInWithGoogle() async {
+    // यहाँ आप बाद में google_sign_in पैकेज कॉन्फ़िगर कर सकते हैं
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Google Sign-In Connecting...")));
+  }
+
+  void _loginSuccess() {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("लॉगिन सफल! HelloIndia में आपका स्वागत है।")));
+    // यहाँ लॉगिन के बाद जो मुख्य चैट स्क्रीन खोलनी है, उसका कोड आएगा
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (_initError != null) {
+      return Scaffold(body: Center(child: Text("Error: $_initError")));
+    }
+    if (!_initialized) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator(color: Colors.orange)));
+    }
+
     return Scaffold(
       backgroundColor: Colors.white,
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // Branded "HI" Container
-            Container(
-              width: 100,
-              height: 100,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFFFF6600), Color(0xFF048543)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(24),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFFFF6600).withOpacity(0.3),
-                    blurRadius: 20,
-                    offset: const Offset(0, 10),
-                  ),
-                ],
-              ),
-              child: const Center(
-                child: Text(
-                  'HI',
-                  style: TextStyle(
-                    fontSize: 44,
-                    fontWeight: FontWeight.w900,
-                    color: Colors.white,
-                    letterSpacing: 2,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-            const Text(
-              'HelloIndia',
-              style: TextStyle(
-                fontSize: 26,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 1.2,
-                color: Color(0xFF1F2937),
-              ),
-            ),
-            const SizedBox(height: 32),
-            const SizedBox(
-              width: 28,
-              height: 28,
-              child: CircularProgressIndicator(
-                strokeWidth: 2.8,
-                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFF6600)),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Authentication state router
-class AuthStateGate extends StatelessWidget {
-  const AuthStateGate({Key? key}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(),
-      builder: (context, snapshot) {
-        // While Firebase Auth evaluates cached tokens
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const SplashScreen();
-        }
-
-        // Active authenticated session
-        if (snapshot.hasData && snapshot.data != null) {
-          return const PlaceholderHomeScreen();
-        }
-
-        // Unauthenticated session
-        return const PlaceholderAuthScreen();
-      },
-    );
-  }
-}
-
-/// Safe temporary entry screens to confirm rendering success
-class PlaceholderHomeScreen extends StatelessWidget {
-  const PlaceholderHomeScreen({Key? key}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('HelloIndia'),
-        backgroundColor: const Color(0xFFFF6600),
-        foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () async => await FirebaseAuth.instance.signOut(),
-          ),
-        ],
-      ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Text(
-              'Welcome to HelloIndia',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text('Signed in as: ${user?.phoneNumber ?? user?.email ?? user?.uid}'),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class PlaceholderAuthScreen extends StatelessWidget {
-  const PlaceholderAuthScreen({Key? key}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: Center(
+      body: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 30.0, vertical: 80.0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Container(
-                width: 80,
-                height: 80,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFF6600),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Center(
-                  child: Text(
-                    'HI',
-                    style: TextStyle(fontSize: 36, fontWeight: FontWeight.bold, color: Colors.white),
-                  ),
+              // ऐप लोगो और नाम
+              Center(
+                child: Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(color: Colors.orange, borderRadius: BorderRadius.circular(20)),
+                  child: const Text("HI", style: TextStyle(fontSize: 48, fontWeight: FontWeight.bold, color: Colors.white)),
                 ),
               ),
               const SizedBox(height: 20),
-              const Text(
-                'HelloIndia Login Ready',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+              const Center(child: Text("HelloIndia", style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.black))),
+              const SizedBox(height: 40),
+
+              if (!_otpSent) ...[
+                // मोबाइल नंबर इनपुट
+                TextField(
+                  controller: _phoneController,
+                  keyboardType: TextInputType.phone,
+                  decoration: InputDecoration(
+                    prefixText: "+91 ",
+                    labelText: "मोबाइल नंबर दर्ज करें",
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                ElevatedButton(
+                  onPressed: _sendOTP,
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, padding: const EdgeInsets.symmetric(vertical: 15)),
+                  child: const Text("OTP भेजें", style: TextStyle(fontSize: 16, color: Colors.white)),
+                ),
+              ] else ...[
+                // OTP इनपुट स्क्रीन
+                TextField(
+                  controller: _otpController,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: "6-अंकों का OTP डालें",
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                ElevatedButton(
+                  onPressed: _verifyOTP,
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.green, padding: const EdgeInsets.symmetric(vertical: 15)),
+                  child: const Text("Verify & Login", style: TextStyle(fontSize: 16, color: Colors.white)),
+                ),
+              ],
+
+              const SizedBox(height: 30),
+              const Row(
+                children: [
+                  Expanded(child: Divider()),
+                  Padding(padding: EdgeInsets.symmetric(horizontal: 10), child: Text("या")),
+                  Expanded(child: Divider()),
+                ],
               ),
-              const SizedBox(height: 8),
-              const Text(
-                'Phase 2: Screen rendering functional.\nReady for full OTP & Google Sign-In setup.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.black54),
+              const SizedBox(height: 30),
+
+              // Google Sign In बटन
+              OutlinedButton.icon(
+                onPressed: _signInWithGoogle,
+                icon: Image.network('https://wikimedia.org', height: 24),
+                label: const Text("Google के साथ लॉग इन करें", style: TextStyle(color: Colors.black54)),
+                style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 15), side: const BorderSide(color: Colors.grey)),
               ),
             ],
           ),
@@ -334,3 +219,4 @@ class PlaceholderAuthScreen extends StatelessWidget {
     );
   }
 }
+
