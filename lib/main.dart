@@ -3,8 +3,16 @@ import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 
 void main() async {
+  // एरर रोकने के लिए बाइंडिंग पक्की करें
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
+  
+  // अगर फ़ायरबेस लोड न हो, तो भी ऐप को ब्लैक होने से रोकने के लिए try-catch
+  try {
+    await Firebase.initializeApp();
+  } catch (e) {
+    debugPrint("Firebase init failed: $e");
+  }
+
   runApp(const MyApp());
 }
 
@@ -18,6 +26,7 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         primarySwatch: Colors.blue,
+        scaffoldBackgroundColor: Colors.white, // स्क्रीन को हमेशा सफेद रखेगा
       ),
       home: const HomeScreen(),
     );
@@ -29,19 +38,13 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // PopScope बैक बटन को संभालने के लिए है ताकि एक बार में ऐप बैक/बंद हो सके
     return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, result) async {
-        if (didPop) return;
-        // बैक बटन दबाते ही ऐप को पूरी तरह बंद कर देगा
-        await SystemNavigator.pop();
-      },
+      canPop: true, // बैक बटन को एक बार में बाहर जाने की अनुमति दें
       child: const Scaffold(
         body: Center(
           child: Text(
             'Welcome to Hello India App',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black),
           ),
         ),
       ),
